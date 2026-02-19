@@ -1,0 +1,12 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile",
+    "dockerContext": "."
+  },
+  "deploy": {
+    "startCommand": "gunicorn --bind 0.0.0.0:8000 --workers 1 --timeout 600 --access-logfile - --error-logfile - web_server:app",
+    "healthcheckPath": "/health"
+  }
+}

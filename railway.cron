@@ -1,0 +1,16 @@
+# Railway Cron Job Configuration
+# 每天下午4点（北京时间16:00，UTC时间8:00）执行完整同步
+
+# Cron表达式：分钟 小时 日 月 星期
+# 0 8 * * * = 每天UTC 8:00（北京时间 16:00）
+
+# 方式1: 调用HTTP API（推荐）
+0 8 * * * curl -X POST http://localhost:8000/api/run-full-sync
+
+# 方式2: 直接执行脚本
+# 0 8 * * * bash /app/scripts/auto_crawl_and_sync.sh
+
+# 注意：
+# 1. Railway上的定时任务在Railway Dashboard中配置
+# 2. 不需要将此文件内容提交到Railway
+# 3. 此文件仅作为Cron表达式参考
