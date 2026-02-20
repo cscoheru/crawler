@@ -1,0 +1,29 @@
+services:
+  # Web Service
+  - type: web
+    name: crawler-system
+    env: docker
+    region: singapore
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: LOG_LEVEL
+        value: INFO
+      - key: PORT
+        value: 8000
+    healthCheckPath: /health
+
+  # Cron Job (Daily at 16:00 Beijing time = 08:00 UTC)
+  - type: cron
+    name: daily-crawler
+    env: docker
+    region: singapore
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    schedule: "0 8 * * *"
+    command: python /app/scripts/auto_crawl_and_sync.sh
+    envVars:
+      - key: LOG_LEVEL
+        value: INFO
