@@ -12,11 +12,16 @@ mkdir -p /app/logs
 echo "📊 Initializing database..."
 python3 -c "
 import sys
+import os
 sys.path.insert(0, '/app')
+
+# 设置环境变量
+os.environ['DATA_DIR'] = '/app/data'
+
 from storage.database import DatabaseManager
 db = DatabaseManager()
-print('✅ Database initialized')
-print(f'📁 Database path: {db.db_path}')
+print('✅ Database initialized successfully')
+print(f'📁 Database URL: {db.database_url}')
 "
 
 # 启动应用
