@@ -26,5 +26,9 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# 默认命令 - 启动Flask服务
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--timeout", "600", "--access-logfile", "-", "--error-logfile", "-", "web_server:app"]
+# 复制启动脚本
+COPY start.sh .
+RUN chmod +x start.sh
+
+# 默认命令 - 使用启动脚本
+CMD ["./start.sh"]

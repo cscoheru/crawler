@@ -10,18 +10,37 @@ from loguru import logger
 # 添加项目路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from scheduler.jobs import ManualJobs
-from storage.database import DatabaseManager
-from utils.dify_integration import DifyBatchSyncer
-
 app = Flask(__name__)
 
 # 配置日志
 logger.remove()
 logger.add(sys.stderr, level=os.getenv("LOG_LEVEL", "INFO"))
 
-# 初始化数据库管理器
-db_manager = DatabaseManager()
+# 延迟导入，避免启动失败
+db_manager = None
+manual_jobs = None
+
+def initialize_services():
+    """初始化服务"""
+    global db_manager, manual_jobs
+    try:
+        from storage.database import DatabaseManager
+        from scheduler.jobs import ManualJobs
+
+        # 设置数据库路径
+        data_dir = os.getenv('DATA_DIR', './data')
+        os.makedirs(data_dir, exist_ok=True)
+
+        db_manager = DatabaseManager()
+        manual_jobs = ManualJobs(db_manager=db_manager)
+
+        logger.info("✅ Services initialized successfully")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize services: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 
 @app.route('/health')
@@ -30,8 +49,23 @@ def health():
     return jsonify({
         "status": "healthy",
         "service": "crawler-web",
-        "database": os.getenv("DATABASE_URL", "sqlite:///data/crawler.db")
+        "database": os.getenv("DATABASE_URL", "sqlite:///data/crawler.db"),
+        "data_dir": os.getenv('DATA_DIR', './data')
     })
+
+
+@app.route('/api/init', methods=['POST'])
+def init_services():
+    """初始化服务端点"""
+    try:
+        success = initialize_services()
+        if success:
+            return jsonify({"success": True, "message": "Services initialized"})
+        else:
+            return jsonify({"success": False, "error": "Initialization failed"}), 500
+    except Exception as e:
+        logger.error(f"Init failed: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route('/api/stats')
