@@ -1,0 +1,42 @@
+  name: Trigger Render Crawler
+
+  on:
+    schedule:
+      - cron: '0 8 * * *'
+    workflow_dispatch:
+
+  env:
+    RENDER_API_URL: ${{ secrets.RENDER_API_URL }}
+
+  jobs:
+    trigger-crawler:
+      name: Call Render API to Run Crawler
+      runs-on: ubuntu-latest
+
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@v4
+
+        - name: Trigger Full Sync API
+          run: |
+            echo "触发时间: $(date)"
+            echo "调用 Render API: $RENDER_API_URL"
+            response=$(curl -i -X POST \
+              "${RENDER_API_URL}/api/run-full-sync" \
+              --max-time 300 \
+              --write-out "\n%{http_code}")
+            http_code=$(echo "$response" | tail -n1)
+            echo "HTTP 状态码: $http_code"
+            if [ "$http_code" = "200" ] || [ "$http_code" = "202" ]; then
+              echo "✅ 爬虫触发成功"
+            else
+              echo "❌ 爬虫触发失败"
+              echo "响应内容:"
+              echo "$response"
+              exit 1
+            fi
+
+        - name: Wait for completion
+          run: |
+            echo "爬虫已在 Render 上开始运行"
+            echo "查看日志: https://dashboard.render.com"
