@@ -4,6 +4,7 @@ Flask Web服务器 - 用于手动触发爬虫和查看状态
 """
 import os
 import sys
+import threading
 from flask import Flask, jsonify, request
 from loguru import logger
 
@@ -29,28 +30,6 @@ def initialize_services():
     """初始化服务"""
     global db_manager, manual_jobs
     try:
-        # 设置数据库路径
-        data_dir = os.getenv('DATA_DIR', './data')
-        os.makedirs(data_dir, exist_ok=True)
-
-        db_manager = DatabaseManager()
-        manual_jobs = ManualJobs(db_manager=db_manager)
-
-        logger.info("✅ Services initialized successfully")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Failed to initialize services: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-def initialize_services():
-    """初始化服务"""
-    global db_manager, manual_jobs
-    try:
-        from storage.database import DatabaseManager
-        from scheduler.jobs import ManualJobs
-
         # 设置数据库路径
         data_dir = os.getenv('DATA_DIR', './data')
         os.makedirs(data_dir, exist_ok=True)
@@ -249,15 +228,10 @@ def sync_to_dify():
         }), 500
 
 
-@app.route('/api/run-full-sync', methods=['POST'])
-def run_full_sync():
-    """
-    运行完整同步流程：爬取→分类→导出→Dify同步
-    适合Railway Cron定时任务调用
-    """
+def _run_full_sync_task():
+    """后台执行完整同步任务"""
     try:
-        logger.info("Starting full sync workflow...")
-
+        logger.info("Background sync task started...")
         results = {}
 
         # 1. 爬取数据（限制页面数以避免超时）
@@ -281,7 +255,6 @@ def run_full_sync():
         # 2. 分类未分类的文章
         logger.info("Step 2: Classifying articles...")
         try:
-            from scheduler.jobs import CrawlerScheduler
             scheduler = CrawlerScheduler(db_manager=db_manager)
             # 运行分类任务
             import asyncio
@@ -329,14 +302,34 @@ def run_full_sync():
             logger.error(f"Failed to get stats: {e}")
             results['stats'] = {"error": str(e)}
 
-        logger.info(f"Full sync completed: {results}")
+        logger.info(f"Background sync completed: {results}")
+    except Exception as e:
+        logger.error(f"Background sync failed: {e}")
+        import traceback
+        traceback.print_exc()
 
+
+@app.route('/api/run-full-sync', methods=['POST'])
+def run_full_sync():
+    """
+    运行完整同步流程：爬取→分类→导出→Dify同步
+    异步执行，立即返回 202
+    """
+    try:
+        logger.info("Full sync request received, starting in background...")
+
+        # 使用线程池异步执行
+        thread = threading.Thread(target=_run_full_sync_task, daemon=True)
+        thread.start()
+
+        # 立即返回 202 Accepted
         return jsonify({
             "success": True,
-            "data": results
-        })
+            "message": "Full sync started in background",
+            "status": "processing"
+        }), 202
     except Exception as e:
-        logger.error(f"Full sync failed: {e}")
+        logger.error(f"Failed to start sync: {e}")
         return jsonify({
             "success": False,
             "error": str(e)

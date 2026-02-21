@@ -41,8 +41,9 @@ jobs:
 
           echo "HTTP 状态码: $http_code"
 
-          # 检查响应
+          # 检查响应 (202 = 异步处理已接受)
           if [ "$http_code" = "200" ] || [ "$http_code" = "202" ]; then
+            echo "✅ 爬虫触发成功"
             echo "✅ 爬虫触发成功"
           else
             echo "❌ 爬虫触发失败"
