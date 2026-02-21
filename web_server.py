@@ -16,9 +16,33 @@ app = Flask(__name__)
 logger.remove()
 logger.add(sys.stderr, level=os.getenv("LOG_LEVEL", "INFO"))
 
-# 延迟导入，避免启动失败
+# 导入所需的类
+from storage.database import DatabaseManager
+from scheduler.jobs import ManualJobs, CrawlerScheduler
+from utils.dify_sync import DifyBatchSyncer
+
+# 初始化服务
 db_manager = None
 manual_jobs = None
+
+def initialize_services():
+    """初始化服务"""
+    global db_manager, manual_jobs
+    try:
+        # 设置数据库路径
+        data_dir = os.getenv('DATA_DIR', './data')
+        os.makedirs(data_dir, exist_ok=True)
+
+        db_manager = DatabaseManager()
+        manual_jobs = ManualJobs(db_manager=db_manager)
+
+        logger.info("✅ Services initialized successfully")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize services: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 def initialize_services():
     """初始化服务"""
@@ -320,6 +344,10 @@ def run_full_sync():
 
 
 if __name__ == '__main__':
+    # 初始化服务
+    if not initialize_services():
+        logger.warning("⚠️ Service initialization failed, some endpoints may not work")
+
     # 开发环境直接运行
     port = int(os.getenv('PORT', 8000))
     app.run(host='0.0.0.0', port=port, debug=False)
