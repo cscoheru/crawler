@@ -187,7 +187,7 @@ CATEGORY_TAXONOMY = {
             },
             "financial_management": {
                 "name": "财务管理",
-                "sub_subcategories":": {
+                "sub_subcategories": {
                     "financial_analysis": {"name": "财务分析", "keywords": ["财务分析", "财务比率", "杜邦分析", "财务指标", "盈利能力"]},
                     "investment_decision": {"name": "投资决策", "keywords": ["投资决策", "资本预算", "NPV", "IRR", "投资回报"]},
                     "financing": {"name": "融资管理", "keywords": ["融资", "股权融资", "债权融资", "IPO", "私募融资"]},
