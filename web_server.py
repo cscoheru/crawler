@@ -19,7 +19,7 @@ logger.add(sys.stderr, level=os.getenv("LOG_LEVEL", "INFO"))
 # 导入所需的类
 from storage.database import DatabaseManager
 from scheduler.jobs import ManualJobs, CrawlerScheduler
-from utils.dify_sync import DifyBatchSyncer
+from utils.dify_integration import DifyBatchSyncer
 
 # 初始化服务
 db_manager = None
