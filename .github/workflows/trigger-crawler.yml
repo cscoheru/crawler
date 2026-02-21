@@ -1,57 +1,51 @@
-name: Trigger Render Crawler
+  # 触发条件
+  on:
+    # 定时执行 - 每天 UTC 8:00（北京时间 16:00）
+    schedule:
+      - cron: '0 8 * * *'
 
-# 触发条件
-on:
-  # 定时执行 - 每天 UTC 8:00（北京时间 16:00）
-  schedule:
-    - cron: '0 8 * * *'
+    # 允许手动触发
+    workflow_dispatch:
 
-  # 允许手动触发
-  workflow_dispatch:
+  env:
+    RENDER_API_URL: ${{ secrets.RENDER_API_URL }}
 
-  # 可选：推送到 main 时也触发（测试用）
-  # push:
-  #   branches: [ main ]
+  jobs:
+    trigger-crawler:
+      name: Call Render API to Run Crawler
+      runs-on: ubuntu-latest
 
-env:
-  RENDER_API_URL: ${{ secrets.RENDER_API_URL }}
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@v4
 
-jobs:
-  trigger-crawler:
-    name: Call Render API to Run Crawler
-    runs-on: ubuntu-latest
+        - name: Trigger Full Sync API
+          run: |
+            echo "触发时间: $(date)"
+            echo "调用 Render API: $RENDER_API_URL"
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+            # 调用 Render 上的完整同步 API
+            response=$(curl -i -X POST \
+              "${RENDER_API_URL}/api/run-full-sync" \
+              --max-time 300 \
+              --write-out "\n%{http_code}")
 
-      - name: Trigger Full Sync API
-        run: |
-          echo "触发时间: $(date)"
-          echo "调用 Render API: $RENDER_API_URL"
+            # 获取 HTTP 状态码（最后一行）
+            http_code=$(echo "$response" | tail -n1)
 
-          # 调用 Render 上的完整同步 API
-          response=$(curl -i -X POST \
-            "${RENDER_API_URL}/api/run-full-sync" \
-            --max-time 300 \
-            --write-out "\n%{http_code}")
+            echo "HTTP 状态码: $http_code"
 
-          # 获取 HTTP 状态码（最后一行）
-          http_code=$(echo "$response" | tail -n1)
+            # 检查响应
+            if [ "$http_code" = "200" ] || [ "$http_code" = "202" ]; then
+              echo "✅ 爬虫触发成功"
+            else
+              echo "❌ 爬虫触发失败"
+              echo "响应内容:"
+              echo "$response"
+              exit 1
+            fi
 
-          echo "HTTP 状态码: $http_code"
-
-          # 检查响应
-          if [ "$http_code" = "200" ] || [ "$http_code" = "202" ]; then
-            echo "✅ 爬虫触发成功"
-          else
-            echo "❌ 爬虫触发失败"
-            echo "响应内容:"
-            echo "$response"
-            exit 1
-          fi
-
-      - name: Wait for completion (optional)
-        run: |
-          echo "爬虫已在 Render 上开始运行"
-          echo "查看日志: https://dashboard.render.com"
+        - name: Wait for completion
+          run: |
+            echo "爬虫已在 Render 上开始运行"
+            echo "查看日志: https://dashboard.render.com"
