@@ -169,25 +169,31 @@ class CrawlerScheduler:
         logger.info("Scheduler stopped")
 
     async def _crawl_zhihu_job(self):
-        """Execute Zhihu crawling job."""
+        """Execute Zhihu crawling job using Hugging Face dataset."""
         logger.info("=" * 60)
-        logger.info(f"Starting scheduled Zhihu crawling: {datetime.now()}")
+        logger.info(f"Starting Zhihu data collection from Hugging Face: {datetime.now()}")
         logger.info("=" * 60)
 
-        from crawler.zhihu import ZhihuCrawler
+        # Use Hugging Face dataset instead of web scraping
+        from crawler.huggingface_zhihu import HuggingFaceZhihuCrawler
 
-        crawler = ZhihuCrawler()
+        crawler = HuggingFaceZhihuCrawler()
         log = self.db_manager.create_crawl_log("zhihu")
 
         try:
             all_articles = []
 
-            # Crawl for each keyword category
+            # Collect for each keyword category
             for category, keywords in SEARCH_KEYWORDS.items():
-                logger.info(f"Searching Zhihu for category: {category}")
+                logger.info(f"Fetching from Hugging Face for category: {category}")
 
-                articles = crawler.crawl_by_keywords(keywords[:5], max_pages=2)  # Limit keywords per run
+                articles = crawler.crawl_by_keywords(keywords[:5], max_pages=5)
                 all_articles.extend(articles)
+
+            # Also get some random samples for diversity
+            logger.info("Fetching random samples for diversity...")
+            random_samples = crawler.get_random_samples(n=50)
+            all_articles.extend(random_samples)
 
             # Clean and classify
             from utils.text_cleaner import clean_batch
@@ -204,11 +210,11 @@ class CrawlerScheduler:
                 failed_count=result["failed"]
             )
 
-            logger.info(f"Zhihu crawling completed: {result['success']} articles saved, "
+            logger.info(f"Zhihu data collection completed: {result['success']} articles saved, "
                        f"{result['duplicate']} duplicates, {result['failed']} failed")
 
         except Exception as e:
-            logger.error(f"Zhihu crawling job failed: {e}")
+            logger.error(f"Zhihu data collection job failed: {e}")
             self.db_manager.update_crawl_log(log.id, error_msg=str(e))
 
         finally:
@@ -379,24 +385,26 @@ class CrawlerScheduler:
             logger.error(f"Classification job failed: {e}")
 
     async def _crawl_dedao_job(self):
-        """Execute Dedao crawling job."""
+        """Execute Dedao crawling job using Playwright."""
         logger.info("=" * 60)
         logger.info(f"Starting scheduled Dedao crawling: {datetime.now()}")
         logger.info("=" * 60)
 
-        from crawler.dedao import DedaoCrawler
+        from crawler.dedao_playwright import DedaoCrawlerPlaywright
 
-        crawler = DedaoCrawler()
+        crawler = DedaoCrawlerPlaywright()
         log = self.db_manager.create_crawl_log("dedao")
 
         try:
             all_articles = []
 
             for category, keywords in SEARCH_KEYWORDS.items():
-                logger.info(f"Searching Dedao for category: {category}")
+                logger.info(f"Searching Dedao (Playwright) for category: {category}")
 
-                articles = crawler.crawl_by_keywords(keywords[:3], max_pages=2)
-                all_articles.extend(articles)
+                # Limit to fewer keywords due to Playwright overhead
+                for keyword in keywords[:2]:
+                    articles = list(crawler.search(keyword, max_pages=1))
+                    all_articles.extend(articles)
 
             # Clean and classify
             from utils.text_cleaner import clean_batch
@@ -418,25 +426,30 @@ class CrawlerScheduler:
             logger.error(f"Dedao crawling job failed: {e}")
             self.db_manager.update_crawl_log(log.id, error_msg=str(e))
 
+        finally:
+            await crawler.close()
+
     async def _crawl_ximalaya_job(self):
-        """Execute Ximalaya crawling job."""
+        """Execute Ximalaya crawling job using category browsing."""
         logger.info("=" * 60)
         logger.info(f"Starting scheduled Ximalaya crawling: {datetime.now()}")
         logger.info("=" * 60)
 
-        from crawler.ximalaya import XimalayaCrawler
+        from crawler.ximalaya_fixed import XimalayaCrawlerFixed
 
-        crawler = XimalayaCrawler()
+        crawler = XimalayaCrawlerFixed()
         log = self.db_manager.create_crawl_log("ximalaya")
 
         try:
             all_articles = []
 
             for category, keywords in SEARCH_KEYWORDS.items():
-                logger.info(f"Searching Ximalaya for category: {category}")
+                logger.info(f"Searching Ximalaya (category browsing) for category: {category}")
 
-                articles = crawler.crawl_by_keywords(keywords[:3], max_pages=2)
-                all_articles.extend(articles)
+                # Limit to fewer keywords for efficiency
+                for keyword in keywords[:2]:
+                    articles = crawler.search(keyword, max_pages=1)
+                    all_articles.extend(articles)
 
             # Clean and classify
             from utils.text_cleaner import clean_batch
@@ -457,6 +470,9 @@ class CrawlerScheduler:
         except Exception as e:
             logger.error(f"Ximalaya crawling job failed: {e}")
             self.db_manager.update_crawl_log(log.id, error_msg=str(e))
+
+        finally:
+            await crawler.close()
 
     async def _dify_sync_job(self):
         """Execute Dify knowledge base sync job."""
@@ -553,8 +569,8 @@ class ManualJobs:
 
         # Import appropriate crawler
         if source == "zhihu":
-            from crawler.zhihu import ZhihuCrawler
-            crawler = ZhihuCrawler()
+            from crawler.huggingface_zhihu import HuggingFaceZhihuCrawler
+            crawler = HuggingFaceZhihuCrawler()
         elif source == "toutiao":
             from crawler.toutiao import ToutiaoCrawler
             crawler = ToutiaoCrawler()
@@ -565,19 +581,35 @@ class ManualJobs:
             from crawler.bilibili import BilibiliCrawler
             crawler = BilibiliCrawler()
         elif source == "dedao":
-            from crawler.dedao import DedaoCrawler
-            crawler = DedaoCrawler()
+            from crawler.dedao_playwright import DedaoCrawlerPlaywright
+            crawler = DedaoCrawlerPlaywright()
         elif source == "ximalaya":
-            from crawler.ximalaya import XimalayaCrawler
-            crawler = XimalayaCrawler()
+            from crawler.ximalaya_fixed import XimalayaCrawlerFixed
+            crawler = XimalayaCrawlerFixed()
         else:
             raise ValueError(f"Unknown source: {source}")
 
         log = self.db_manager.create_crawl_log(source)
 
         try:
-            # Crawl
-            articles = crawler.crawl_by_keywords(keywords, max_pages)
+            # Check if using Playwright crawler (async)
+            is_playwright = source == "dedao"  # Only Dedao still uses Playwright
+            is_fixed_async = source == "ximalaya"  # Ximalaya uses fixed crawler (returns list)
+
+            if is_playwright:
+                # Playwright crawlers use async search method
+                articles = []
+                for keyword in keywords[:3]:  # Limit keywords for Playwright
+                    for article in crawler.search(keyword, max_pages=max_pages):
+                        articles.append(article)
+            elif is_fixed_async:
+                # Ximalaya fixed crawler returns list directly
+                articles = []
+                for keyword in keywords[:3]:
+                    articles.extend(crawler.search(keyword, max_pages=max_pages))
+            else:
+                # Regular crawlers
+                articles = crawler.crawl_by_keywords(keywords, max_pages)
 
             # Clean and classify
             from utils.text_cleaner import clean_batch
@@ -606,7 +638,53 @@ class ManualJobs:
             raise
 
         finally:
-            crawler.close()
+            # Close Playwright browsers if needed
+            if source == "dedao":  # Only Dedao uses Playwright now
+                import asyncio
+                asyncio.run(crawler.close())
+            elif source == "ximalaya":
+                crawler.close()  # Fixed crawler has simple close()
+            else:
+                crawler.close()
+
+    async def vectorize_articles(self, articles: List[Dict]) -> bool:
+        """
+        Vectorize articles and add to Pinecone.
+
+        Args:
+            articles: List of article dicts
+
+        Returns:
+            True if successful
+        """
+        try:
+            from storage.pinecone_store import PineconeStore
+            from storage.supabase_client import SupabaseClient
+            from utils.embedding import QwenEmbedder
+
+            pinecone = PineconeStore()
+            embedder = QwenEmbedder()
+            supabase = SupabaseClient()
+
+            if not pinecone.index or not embedder.api_key:
+                logger.warning("Pinecone or Qwen not configured, skipping vectorization")
+                return False
+
+            # Generate embeddings
+            logger.info(f"Generating embeddings for {len(articles)} articles")
+            embeddings = await embedder.vectorize_articles(articles, batch_size=10)
+
+            # Add to Pinecone
+            logger.info("Adding vectors to Pinecone")
+            result = await pinecone.add_vectors(articles, embeddings)
+
+            if result:
+                logger.info(f"Successfully vectorized {len(articles)} articles")
+            return result
+
+        except Exception as e:
+            logger.error(f"Vectorization failed: {e}")
+            return False
 
     def export_data(
         self,
