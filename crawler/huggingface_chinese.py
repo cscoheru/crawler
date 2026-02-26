@@ -2,6 +2,7 @@
 Additional HuggingFace Chinese dataset crawlers.
 Includes various Chinese NLP datasets for diverse content sources.
 """
+import json
 from typing import Dict, List, Optional
 from loguru import logger
 
@@ -63,16 +64,22 @@ class HuggingFaceLCQMCrawler(BaseCrawler):
                     seen.add(text)
 
                     # Create combined Q&A content
-                    is_match = "相似" if label == 1 else "不相似"
-                    content = f"问题1: {question1}\n问题2: {question2}\n相似度: {is_match}"
+                    is_match = "similar" if label == 1 else "not_similar"
 
                     results.append(self.normalize_article_data({
                         "id": f"lcqmc_{hash(text) % 1000000}",
                         "title": f"Q: {question1[:50]}...",
-                        "content": content[:1000],
+                        "content": f"问题1: {question1}\n问题2: {question2}"[:1000],
                         "author": "LCQMC语料库",
                         "url": "https://github.com/CLUEbenchmark/CLUE",
                         "category": "qa",
+                        # New HuggingFace fields
+                        "content_type": "qa",
+                        "question": question1,
+                        "answer": question2,
+                        "similarity": is_match,
+                        "dataset_source": self.dataset_name,
+                        "language": "zh",
                     }))
 
                 except Exception:
@@ -148,6 +155,10 @@ class HuggingFaceCMNLUCrawler(BaseCrawler):
                         "author": f"CMNLU标注 ({label})",
                         "url": "https://github.com/CLUEbenchmark/CLUE",
                         "category": "general",
+                        # New HuggingFace fields
+                        "content_type": "article",
+                        "dataset_source": self.dataset_name,
+                        "language": "zh",
                     }))
 
                 except Exception:
@@ -218,15 +229,20 @@ class HuggingFaceC3Crawler(BaseCrawler):
 
                     seen.add(text)
 
-                    content = f"问题: {question}\n选项: {', '.join(choices)}\n答案: {answer}"
-
                     results.append(self.normalize_article_data({
                         "id": f"c3_{hash(text) % 1000000}",
                         "title": question[:60] + "..." if len(question) > 60 else question,
-                        "content": content[:1000],
+                        "content": f"问题: {question}\n选项: {', '.join(choices)}\n答案: {answer}"[:1000],
                         "author": "C3儿童数据集",
                         "url": "https://github.com/CLUEbenchmark/CLUE",
                         "category": "education",
+                        # New HuggingFace fields
+                        "content_type": "qa",
+                        "question": question,
+                        "choices": choices,
+                        "answer": answer,
+                        "dataset_source": self.dataset_name,
+                        "language": "zh",
                     }))
 
                 except Exception:
@@ -295,8 +311,8 @@ class HuggingFaceChnSentiCorpCrawler(BaseCrawler):
 
                     seen.add(text)
 
-                    sentiment_map = {0: "负面", 1: "正面", 2: "中性"}
-                    sentiment = sentiment_map.get(label, "未知")
+                    sentiment_map = {0: "negative", 1: "positive", 2: "neutral"}
+                    sentiment = sentiment_map.get(label, "neutral")
 
                     results.append(self.normalize_article_data({
                         "id": f"chnsenti_{hash(text) % 1000000}",
@@ -305,6 +321,12 @@ class HuggingFaceChnSentiCorpCrawler(BaseCrawler):
                         "author": f"ChnSentiCorp (情感: {sentiment})",
                         "url": "https://github.com/CLUEbenchmark/CLUE",
                         "category": "review",
+                        # New HuggingFace fields
+                        "content_type": "review",
+                        "sentiment": sentiment,
+                        "sentiment_label": label,
+                        "dataset_source": self.dataset_name,
+                        "language": "zh",
                     }))
 
                 except Exception:

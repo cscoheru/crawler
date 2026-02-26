@@ -92,6 +92,7 @@ class BaseCrawler(ABC):
     def normalize_article_data(self, raw_data: Dict) -> Dict:
         """
         Normalize article data to standard format.
+        Preserves all fields from raw_data including HuggingFace dataset fields.
 
         Args:
             raw_data: Raw article data from crawler
@@ -99,7 +100,8 @@ class BaseCrawler(ABC):
         Returns:
             Normalized article dictionary
         """
-        return {
+        # Start with core fields
+        normalized = {
             "source": self.source,
             "article_id": raw_data.get("id") or raw_data.get("article_id", ""),
             "title": raw_data.get("title", "").strip(),
@@ -108,6 +110,13 @@ class BaseCrawler(ABC):
             "publish_time": self._parse_time(raw_data.get("publish_time", raw_data.get("time", ""))),
             "url": raw_data.get("url", ""),
         }
+
+        # Preserve all additional fields (including HuggingFace dataset fields)
+        for key, value in raw_data.items():
+            if key not in normalized and key != "id":  # Avoid overwriting core fields and skip duplicate id
+                normalized[key] = value
+
+        return normalized
 
     def _parse_time(self, time_str: str) -> Optional[str]:
         """

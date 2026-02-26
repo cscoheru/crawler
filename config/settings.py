@@ -134,3 +134,23 @@ MIN_QUALITY_SCORE = 0.5
 # Export configuration
 EXPORT_FORMATS = ["csv", "json", "excel"]
 EXPORT_BATCH_SIZE = 1000
+
+# HuggingFace dataset configuration
+CONTENT_TYPES = {
+    "article": "文章",
+    "review": "评论",
+    "qa": "问答",
+    "social": "社交内容",
+    "news": "新闻",
+}
+
+SENTIMENT_LABELS = {0: "negative", 1: "positive", 2: "neutral"}
+
+HUGGINGFACE_DATASETS = {
+    "thucnews": {"name": "lansinuote/ChnSentiCorp", "source": "toutiao"},
+    "chnsenticorp": {"name": "lansinuote/ChnSentiCorp", "source": "chnsenticorp"},
+    "lcqmc": {"name": "clue/lcqmc", "source": "lcqmc"},
+    "weibo": {"name": "lansinuote/ChnSentiCorp", "source": "weibo"},
+    "cmnlu": {"name": "clue/cmnlu", "source": "cmnlu"},
+    "c3": {"name": "cmnli/c3", "source": "c3"},
+}

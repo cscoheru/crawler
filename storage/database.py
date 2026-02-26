@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from loguru import logger
 
 from config.settings import DATABASE_URL
-from storage.models import Base, Article, CrawlLog, Keyword
+from storage.models import Base, Article, CrawlLog, Keyword, DatasetMetadata
 
 
 class DatabaseManager:
@@ -73,6 +73,11 @@ class DatabaseManager:
                 if isinstance(category_path, list):
                     category_path = json.dumps(category_path, ensure_ascii=False)
 
+                # Handle choices - convert list to JSON string
+                choices = article_data.get("choices")
+                if isinstance(choices, list):
+                    choices = json.dumps(choices, ensure_ascii=False)
+
                 article = Article(
                     source=article_data.get("source"),
                     article_id=article_data.get("article_id"),
@@ -89,11 +94,24 @@ class DatabaseManager:
                     quality_score=article_data.get("quality_score", 0.0),
                     is_valid=article_data.get("is_valid", True),
                     is_spam=article_data.get("is_spam", False),
+                    # HuggingFace dataset fields
+                    content_type=article_data.get("content_type", "article"),
+                    sentiment=article_data.get("sentiment"),
+                    sentiment_label=article_data.get("sentiment_label"),
+                    question=article_data.get("question"),
+                    answer=article_data.get("answer"),
+                    choices=choices,
+                    similarity=article_data.get("similarity"),
+                    dataset_source=article_data.get("dataset_source"),
+                    language=article_data.get("language", "zh"),
                 )
 
                 session.add(article)
                 session.commit()
                 session.refresh(article)
+
+                # Detach from session to allow access after context manager exits
+                session.expunge(article)
 
                 logger.debug(f"Saved article: {article.title[:50]}")
                 return article
@@ -142,6 +160,9 @@ class DatabaseManager:
         subcategory: Optional[str] = None,
         sub_subcategory: Optional[str] = None,
         min_quality: Optional[float] = None,
+        content_type: Optional[str] = None,
+        sentiment: Optional[str] = None,
+        dataset_source: Optional[str] = None,
         limit: int = 100,
         offset: int = 0
     ) -> List[Article]:
@@ -154,6 +175,9 @@ class DatabaseManager:
             subcategory: Filter by subcategory
             sub_subcategory: Filter by sub-subcategory
             min_quality: Minimum quality score
+            content_type: Filter by content type (article/review/qa/social/news)
+            sentiment: Filter by sentiment (positive/negative/neutral)
+            dataset_source: Filter by dataset source
             limit: Maximum number of results
             offset: Offset for pagination
 
@@ -173,6 +197,12 @@ class DatabaseManager:
                 query = query.filter(Article.sub_subcategory == sub_subcategory)
             if min_quality:
                 query = query.filter(Article.quality_score >= min_quality)
+            if content_type:
+                query = query.filter(Article.content_type == content_type)
+            if sentiment:
+                query = query.filter(Article.sentiment == sentiment)
+            if dataset_source:
+                query = query.filter(Article.dataset_source == dataset_source)
 
             articles = query.order_by(Article.publish_time.desc()).limit(limit).offset(offset).all()
             return articles
@@ -349,18 +379,20 @@ class DatabaseManager:
             valid_articles = session.query(Article).filter(Article.is_valid == True).count()
 
             stats_by_source = {}
-            for source in ["zhihu", "toutiao", "wechat"]:
+            for source in ["zhihu", "toutiao", "wechat", "bilibili", "ximalaya", "weibo", "chnsenticorp", "lcqmc"]:
                 count = session.query(Article).filter(
                     and_(Article.source == source, Article.is_valid == True)
                 ).count()
-                stats_by_source[source] = count
+                if count > 0:
+                    stats_by_source[source] = count
 
             stats_by_category = {}
-            for category in ["psychology", "management", "finance", "other"]:
+            for category in ["psychology", "management", "finance", "other", "general", "qa", "review", "social_media", "education", "entertainment", "sports", "technology"]:
                 count = session.query(Article).filter(
                     and_(Article.category == category, Article.is_valid == True)
                 ).count()
-                stats_by_category[category] = count
+                if count > 0:
+                    stats_by_category[category] = count
 
             avg_quality = session.query(Article.quality_score).filter(
                 Article.is_valid == True
@@ -374,6 +406,162 @@ class DatabaseManager:
                 "by_category": stats_by_category,
                 "average_quality_score": round(avg_quality, 2),
             }
+
+    def get_articles_by_content_type(
+        self, content_type: str, **filters
+    ) -> List[Article]:
+        """
+        Get articles by content type.
+
+        Args:
+            content_type: Content type (article/review/qa/social/news)
+            **filters: Additional filters (source, category, min_quality, etc.)
+
+        Returns:
+            List of Article objects
+        """
+        return self.get_articles(content_type=content_type, **filters)
+
+    def get_dataset_statistics(self) -> Dict:
+        """
+        Get detailed dataset statistics.
+
+        Returns:
+            Dictionary with statistics by content type, sentiment, and dataset source
+        """
+        with self.get_session() as session:
+            # Statistics by content type
+            stats_by_content_type = {}
+            for content_type in ["article", "review", "qa", "social", "news"]:
+                count = session.query(Article).filter(
+                    and_(Article.content_type == content_type, Article.is_valid == True)
+                ).count()
+                stats_by_content_type[content_type] = count
+
+            # Statistics by sentiment
+            stats_by_sentiment = {}
+            for sentiment in ["positive", "negative", "neutral"]:
+                count = session.query(Article).filter(
+                    and_(Article.sentiment == sentiment, Article.is_valid == True)
+                ).count()
+                if count > 0:
+                    stats_by_sentiment[sentiment] = count
+
+            # Statistics by dataset source
+            stats_by_dataset = {}
+            dataset_sources = session.query(Article.dataset_source).filter(
+                and_(Article.dataset_source != None, Article.is_valid == True)
+            ).distinct().all()
+            for (source,) in dataset_sources:
+                count = session.query(Article).filter(
+                    and_(Article.dataset_source == source, Article.is_valid == True)
+                ).count()
+                stats_by_dataset[source] = count
+
+            return {
+                "by_content_type": stats_by_content_type,
+                "by_sentiment": stats_by_sentiment,
+                "by_dataset_source": stats_by_dataset,
+            }
+
+    def get_qa_pairs(self, **filters) -> List[Article]:
+        """
+        Get question-answer pairs.
+
+        Args:
+            **filters: Additional filters (source, category, min_quality, etc.)
+
+        Returns:
+            List of Article objects with QA content
+        """
+        return self.get_articles(content_type="qa", **filters)
+
+    def get_reviews_by_sentiment(self, sentiment: str, **filters) -> List[Article]:
+        """
+        Get reviews filtered by sentiment.
+
+        Args:
+            sentiment: Sentiment value (positive/negative/neutral)
+            **filters: Additional filters
+
+        Returns:
+            List of Article objects with reviews
+        """
+        return self.get_articles(content_type="review", sentiment=sentiment, **filters)
+
+    def export_qa_pairs_to_csv(self, output_file: str, **filters) -> str:
+        """
+        Export QA pairs to CSV format.
+
+        Args:
+            output_file: Output CSV file path
+            **filters: Additional filters
+
+        Returns:
+            Path to output file
+        """
+        import pandas as pd
+        import json
+
+        articles = self.get_qa_pairs(**filters)
+
+        data = []
+        for article in articles:
+            data.append({
+                "question": article.question or "",
+                "answer": article.answer or "",
+                "similarity": article.similarity or "",
+                "category": article.category or "",
+                "source": article.source,
+                "dataset_source": article.dataset_source or "",
+            })
+
+        df = pd.DataFrame(data)
+        if data:
+            df.to_csv(output_file, index=False, encoding='utf-8-sig')
+            logger.info(f"Exported {len(data)} QA pairs to {output_file}")
+        else:
+            # Create empty file with headers
+            df.to_csv(output_file, index=False, encoding='utf-8-sig')
+            logger.warning(f"No QA pairs found, created empty file: {output_file}")
+
+        return output_file
+
+    def export_reviews_with_sentiment(self, output_file: str, **filters) -> str:
+        """
+        Export reviews with sentiment labels to CSV.
+
+        Args:
+            output_file: Output CSV file path
+            **filters: Additional filters
+
+        Returns:
+            Path to output file
+        """
+        import pandas as pd
+
+        articles = self.get_articles(content_type="review", **filters)
+
+        data = []
+        for article in articles:
+            data.append({
+                "content": article.content or "",
+                "sentiment": article.sentiment or "",
+                "sentiment_label": article.sentiment_label or "",
+                "source": article.source,
+                "dataset_source": article.dataset_source or "",
+                "category": article.category or "",
+            })
+
+        df = pd.DataFrame(data)
+        if data:
+            df.to_csv(output_file, index=False, encoding='utf-8-sig')
+            logger.info(f"Exported {len(data)} reviews to {output_file}")
+        else:
+            df.to_csv(output_file, index=False, encoding='utf-8-sig')
+            logger.warning(f"No reviews found, created empty file: {output_file}")
+
+        return output_file
 
     def close(self):
         """Close database connection."""

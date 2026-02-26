@@ -105,9 +105,8 @@ class HuggingFaceTHUCNewsCrawler(BaseCrawler):
             if not title:
                 title = text[:60] + "..."
 
-            # Sentiment label
-            sentiment_map = {0: "负面", 1: "正面", 2: "中性"}
-            sentiment = sentiment_map.get(label, "未知")
+            # Sentiment label (English for consistency)
+            sentiment_map = {0: "negative", 1: "positive", 2: "neutral"}
 
             # Map keyword to category
             category = self._map_keyword_to_category(keyword)
@@ -116,9 +115,15 @@ class HuggingFaceTHUCNewsCrawler(BaseCrawler):
                 "id": f"chnsenti_{hash(text) % 1000000}",
                 "title": title,
                 "content": text[:2000],
-                "author": f"ChnSentiCorp (情感: {sentiment})",
+                "author": f"ChnSentiCorp (情感: {sentiment_map.get(label, 'neutral')})",
                 "url": "https://github.com/CLUEbenchmark/CLUE",
                 "category": category,
+                # New HuggingFace fields
+                "content_type": "news",
+                "sentiment": sentiment_map.get(label, "neutral"),
+                "sentiment_label": label,
+                "dataset_source": self.dataset_name,
+                "language": "zh",
             })
 
         except Exception as e:
@@ -222,6 +227,12 @@ class HuggingFaceWeiboCrawler(BaseCrawler):
                         "author": f"社交用户 (情感: {sentiment})",
                         "url": "https://weibo.com",
                         "category": "social_media",
+                        # New HuggingFace fields
+                        "content_type": "social",
+                        "sentiment": sentiment_map.get(label, "neutral"),
+                        "sentiment_label": label,
+                        "dataset_source": self.dataset_name,
+                        "language": "zh",
                     }))
 
                 except Exception:

@@ -336,6 +336,258 @@ def run_full_sync():
         }), 500
 
 
+# ===== New HuggingFace Dataset API Endpoints =====
+
+@app.route('/api/articles')
+def get_articles():
+    """
+    Get articles with optional filters.
+
+    Query parameters:
+    - source: Filter by source
+    - category: Filter by category
+    - content_type: Filter by content type (article/review/qa/social/news)
+    - sentiment: Filter by sentiment (positive/negative/neutral)
+    - dataset_source: Filter by dataset source
+    - min_quality: Minimum quality score
+    - limit: Maximum results (default: 100)
+    - offset: Pagination offset (default: 0)
+    """
+    try:
+        source = request.args.get('source')
+        category = request.args.get('category')
+        content_type = request.args.get('content_type')
+        sentiment = request.args.get('sentiment')
+        dataset_source = request.args.get('dataset_source')
+        min_quality = request.args.get('min_quality', type=float)
+        limit = request.args.get('limit', 100, type=int)
+        offset = request.args.get('offset', 0, type=int)
+
+        articles = db_manager.get_articles(
+            source=source,
+            category=category,
+            content_type=content_type,
+            sentiment=sentiment,
+            dataset_source=dataset_source,
+            min_quality=min_quality,
+            limit=limit,
+            offset=offset
+        )
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "articles": [article.to_dict() for article in articles],
+                "count": len(articles),
+                "limit": limit,
+                "offset": offset
+            }
+        })
+    except Exception as e:
+        logger.error(f"Failed to get articles: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/stats/detailed')
+def get_detailed_stats():
+    """
+    Get detailed statistics including:
+    - Distribution by content type
+    - Distribution by sentiment
+    - Distribution by dataset source
+    """
+    try:
+        # Get basic stats
+        basic_stats = db_manager.get_statistics()
+
+        # Get detailed dataset stats
+        dataset_stats = db_manager.get_dataset_statistics()
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "basic": basic_stats,
+                "by_content_type": dataset_stats["by_content_type"],
+                "by_sentiment": dataset_stats["by_sentiment"],
+                "by_dataset_source": dataset_stats["by_dataset_source"],
+            }
+        })
+    except Exception as e:
+        logger.error(f"Failed to get detailed stats: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/datasets')
+def get_datasets():
+    """Get list of datasets and their sync status."""
+    try:
+        datasets = db_manager.get_dataset_statistics()
+
+        # Convert to list format
+        dataset_list = []
+        for source, count in datasets["by_dataset_source"].items():
+            dataset_list.append({
+                "name": source,
+                "count": count,
+                "last_sync": None  # Could be added from DatasetMetadata table
+            })
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "datasets": dataset_list,
+                "total": len(dataset_list)
+            }
+        })
+    except Exception as e:
+        logger.error(f"Failed to get datasets: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/datasets/<dataset_name>/sync', methods=['POST'])
+def sync_dataset(dataset_name):
+    """
+    Manually trigger sync for a specific dataset.
+
+    Path parameters:
+    - dataset_name: Name of the dataset (chnsenticorp, lcqmc, weibo, etc.)
+    """
+    try:
+        # Map dataset name to source
+        dataset_source_map = {
+            "chnsenticorp": "chnsenticorp",
+            "lcqmc": "lcqmc",
+            "weibo": "weibo",
+            "thucnews": "toutiao",
+            "cmnlu": "cmnlu",
+            "c3": "c3",
+        }
+
+        source = dataset_source_map.get(dataset_name)
+        if not source:
+            return jsonify({
+                "success": False,
+                "error": f"Unknown dataset: {dataset_name}"
+            }), 400
+
+        logger.info(f"Manual dataset sync triggered: {dataset_name} (source: {source})")
+
+        jobs = ManualJobs(db_manager=db_manager)
+        result = jobs.crawl_source(source, max_pages=2)
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "dataset": dataset_name,
+                "source": source,
+                "result": result
+            }
+        })
+    except Exception as e:
+        logger.error(f"Failed to sync dataset: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/export/qa', methods=['POST'])
+def export_qa_pairs():
+    """
+    Export QA pairs to CSV format.
+
+    Request body:
+    {
+        "category": null,     // Optional: filter by category
+        "min_quality": 0.5    // Optional: minimum quality score
+    }
+    """
+    try:
+        data = request.json or {}
+        category = data.get('category')
+        min_quality = data.get('min_quality', 0.5)
+
+        export_dir = os.path.join(os.getenv('DATA_DIR', './data'), 'exports')
+        os.makedirs(export_dir, exist_ok=True)
+
+        import datetime
+        filename = f"qa_pairs_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        output_file = os.path.join(export_dir, filename)
+
+        path = db_manager.export_qa_pairs_to_csv(
+            output_file,
+            category=category,
+            min_quality=min_quality
+        )
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "export_path": path,
+                "format": "csv"
+            }
+        })
+    except Exception as e:
+        logger.error(f"Failed to export QA pairs: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/export/reviews', methods=['POST'])
+def export_reviews():
+    """
+    Export reviews with sentiment to CSV format.
+
+    Request body:
+    {
+        "sentiment": "positive",  // Optional: positive/negative/neutral
+        "min_quality": 0.5        // Optional: minimum quality score
+    }
+    """
+    try:
+        data = request.json or {}
+        sentiment = data.get('sentiment')
+        min_quality = data.get('min_quality', 0.5)
+
+        export_dir = os.path.join(os.getenv('DATA_DIR', './data'), 'exports')
+        os.makedirs(export_dir, exist_ok=True)
+
+        import datetime
+        filename = f"reviews_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        output_file = os.path.join(export_dir, filename)
+
+        path = db_manager.export_reviews_with_sentiment(
+            output_file,
+            sentiment=sentiment,
+            min_quality=min_quality
+        )
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "export_path": path,
+                "format": "csv"
+            }
+        })
+    except Exception as e:
+        logger.error(f"Failed to export reviews: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 if __name__ == '__main__':
     # 初始化服务
     if not initialize_services():

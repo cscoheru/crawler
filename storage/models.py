@@ -5,6 +5,7 @@ from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Boolean, 
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from datetime import datetime
+import json
 
 Base = declarative_base()
 
@@ -35,12 +36,26 @@ class Article(Base):
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
+    # HuggingFace dataset fields
+    content_type = Column(String(50), default="article")  # article/review/qa/social/news
+    sentiment = Column(String(20))  # positive/negative/neutral
+    sentiment_label = Column(Integer)  # 0/1/2 原始标签
+    question = Column(Text)  # QA类型的问题
+    answer = Column(Text)  # QA类型的答案
+    choices = Column(Text)  # JSON: 选择题选项
+    similarity = Column(String(20))  # similar/not_similar (LCQMC)
+    dataset_source = Column(String(100))  # 数据集名称 e.g. "lansinuote/ChnSentiCorp"
+    language = Column(String(10), default="zh")  # 语言标签
+
     # Unique constraint
     __table_args__ = (
         Index('idx_source_article_id', 'source', 'article_id', unique=True),
         Index('idx_category', 'category'),
         Index('idx_publish_time', 'publish_time'),
         Index('idx_quality_score', 'quality_score'),
+        Index('idx_content_type', 'content_type'),
+        Index('idx_sentiment', 'sentiment'),
+        Index('idx_dataset_source', 'dataset_source'),
     )
 
     def to_dict(self):
@@ -65,6 +80,16 @@ class Article(Base):
             "is_spam": self.is_spam,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            # HuggingFace dataset fields
+            "content_type": self.content_type,
+            "sentiment": self.sentiment,
+            "sentiment_label": self.sentiment_label,
+            "question": self.question,
+            "answer": self.answer,
+            "choices": json.loads(self.choices) if self.choices else None,
+            "similarity": self.similarity,
+            "dataset_source": self.dataset_source,
+            "language": self.language,
         }
 
 
@@ -121,4 +146,39 @@ class Keyword(Base):
             "category": self.category,
             "keyword": self.keyword,
             "weight": self.weight,
+        }
+
+
+class DatasetMetadata(Base):
+    """HuggingFace 数据集元数据"""
+
+    __tablename__ = "dataset_metadata"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    dataset_name = Column(String(100))
+    source = Column(String(50))
+    content_type = Column(String(50))
+    description = Column(Text)
+    total_samples = Column(Integer)
+    last_sync_at = Column(DateTime)
+    config = Column(Text)
+    created_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        Index('idx_dataset_name', 'dataset_name'),
+        Index('idx_source', 'source'),
+    )
+
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "dataset_name": self.dataset_name,
+            "source": self.source,
+            "content_type": self.content_type,
+            "description": self.description,
+            "total_samples": self.total_samples,
+            "last_sync_at": self.last_sync_at.isoformat() if self.last_sync_at else None,
+            "config": json.loads(self.config) if self.config else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
