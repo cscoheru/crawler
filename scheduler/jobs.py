@@ -115,6 +115,20 @@ class CrawlerScheduler:
                 replace_existing=True
             )
 
+        # Weibo dataset crawling job
+        if "weibo" in SCHEDULER_JOBS:
+            self.scheduler.add_job(
+                self._crawl_weibo_job,
+                trigger=CronTrigger(
+                    hour=SCHEDULER_JOBS["weibo"]["hour"],
+                    minute=SCHEDULER_JOBS["weibo"]["minute"],
+                    timezone=SCHEDULER_TIMEZONE
+                ),
+                id="crawl_weibo",
+                name="Crawl Weibo dataset",
+                replace_existing=True
+            )
+
         # Dify sync job
         if "dify_sync" in SCHEDULER_JOBS:
             self.scheduler.add_job(
@@ -221,23 +235,23 @@ class CrawlerScheduler:
             crawler.close()
 
     async def _crawl_toutiao_job(self):
-        """Execute Toutiao crawling job."""
+        """Execute Toutiao crawling job using THUCNews dataset."""
         logger.info("=" * 60)
-        logger.info(f"Starting scheduled Toutiao crawling: {datetime.now()}")
+        logger.info(f"Starting scheduled THUCNews dataset crawling: {datetime.now()}")
         logger.info("=" * 60)
 
-        from crawler.toutiao import ToutiaoCrawler
+        from crawler.huggingface_thucnews import HuggingFaceTHUCNewsCrawler
 
-        crawler = ToutiaoCrawler()
+        crawler = HuggingFaceTHUCNewsCrawler()
         log = self.db_manager.create_crawl_log("toutiao")
 
         try:
             all_articles = []
 
             for category, keywords in SEARCH_KEYWORDS.items():
-                logger.info(f"Searching Toutiao for category: {category}")
+                logger.info(f"Searching THUCNews dataset for category: {category}")
 
-                articles = crawler.crawl_by_keywords(keywords[:5], max_pages=2)
+                articles = crawler.crawl_by_keywords(keywords[:5], max_pages=20)
                 all_articles.extend(articles)
 
             # Clean and classify
@@ -254,10 +268,10 @@ class CrawlerScheduler:
                 failed_count=result["failed"]
             )
 
-            logger.info(f"Toutiao crawling completed: {result['success']} articles saved")
+            logger.info(f"THUCNews dataset crawling completed: {result['success']} articles saved")
 
         except Exception as e:
-            logger.error(f"Toutiao crawling job failed: {e}")
+            logger.error(f"THUCNews dataset crawling job failed: {e}")
             self.db_manager.update_crawl_log(log.id, error_msg=str(e))
 
     async def _crawl_wechat_job(self):
@@ -474,6 +488,93 @@ class CrawlerScheduler:
         finally:
             await crawler.close()
 
+    async def _crawl_weibo_job(self):
+        """Execute Weibo dataset crawling job."""
+        logger.info("=" * 60)
+        logger.info(f"Starting scheduled Weibo dataset crawling: {datetime.now()}")
+        logger.info("=" * 60)
+
+        from crawler.huggingface_thucnews import HuggingFaceWeiboCrawler
+
+        crawler = HuggingFaceWeiboCrawler()
+        log = self.db_manager.create_crawl_log("weibo")
+
+        try:
+            all_articles = []
+
+            for category, keywords in SEARCH_KEYWORDS.items():
+                logger.info(f"Searching Weibo dataset for category: {category}")
+
+                articles = crawler.crawl_by_keywords(keywords[:5], max_pages=20)
+                all_articles.extend(articles)
+
+            # Clean and classify
+            from utils.text_cleaner import clean_batch
+            cleaned_articles = clean_batch(all_articles)
+            classified_articles = self.classifier.classify_batch(cleaned_articles)
+
+            # Save
+            result = self.db_manager.save_articles_batch(classified_articles)
+
+            self.db_manager.update_crawl_log(
+                log.id,
+                success_count=result["success"],
+                failed_count=result["failed"]
+            )
+
+            logger.info(f"Weibo dataset crawling completed: {result['success']} articles saved")
+
+        except Exception as e:
+            logger.error(f"Weibo dataset crawling job failed: {e}")
+            self.db_manager.update_crawl_log(log.id, error_msg=str(e))
+
+        finally:
+            crawler.close()
+
+    async def _crawl_chnsenticorp_job(self):
+        """Execute ChnSentiCorp review dataset crawling job."""
+        logger.info("=" * 60)
+        logger.info(f"Starting scheduled ChnSentiCorp dataset crawling: {datetime.now()}")
+        logger.info("=" * 60)
+
+        from crawler.huggingface_chinese import HuggingFaceChnSentiCorpCrawler
+
+        crawler = HuggingFaceChnSentiCorpCrawler()
+        log = self.db_manager.create_crawl_log("chnsenticorp")
+
+        try:
+            all_articles = []
+
+            # Use general keywords for reviews
+            review_keywords = ["服务", "质量", "体验", "酒店", "产品", "购物"]
+            for keyword in review_keywords:
+                logger.info(f"Searching ChnSentiCorp for keyword: {keyword}")
+                articles = crawler.search(keyword, max_pages=20)
+                all_articles.extend(articles)
+
+            # Clean and classify
+            from utils.text_cleaner import clean_batch
+            cleaned_articles = clean_batch(all_articles)
+            classified_articles = self.classifier.classify_batch(cleaned_articles)
+
+            # Save
+            result = self.db_manager.save_articles_batch(classified_articles)
+
+            self.db_manager.update_crawl_log(
+                log.id,
+                success_count=result["success"],
+                failed_count=result["failed"]
+            )
+
+            logger.info(f"ChnSentiCorp dataset crawling completed: {result['success']} articles saved")
+
+        except Exception as e:
+            logger.error(f"ChnSentiCorp dataset crawling job failed: {e}")
+            self.db_manager.update_crawl_log(log.id, error_msg=str(e))
+
+        finally:
+            crawler.close()
+
     async def _dify_sync_job(self):
         """Execute Dify knowledge base sync job."""
         logger.info("=" * 60)
@@ -572,14 +673,20 @@ class ManualJobs:
             from crawler.huggingface_zhihu import HuggingFaceZhihuCrawler
             crawler = HuggingFaceZhihuCrawler()
         elif source == "toutiao":
-            from crawler.toutiao import ToutiaoCrawler
-            crawler = ToutiaoCrawler()
+            from crawler.huggingface_thucnews import HuggingFaceTHUCNewsCrawler
+            crawler = HuggingFaceTHUCNewsCrawler()
         elif source == "wechat":
             from crawler.wechat import WeChatCrawler
             crawler = WeChatCrawler()
         elif source == "bilibili":
             from crawler.bilibili import BilibiliCrawler
             crawler = BilibiliCrawler()
+        elif source == "weibo":
+            from crawler.huggingface_thucnews import HuggingFaceWeiboCrawler
+            crawler = HuggingFaceWeiboCrawler()
+        elif source == "chnsenticorp":
+            from crawler.huggingface_chinese import HuggingFaceChnSentiCorpCrawler
+            crawler = HuggingFaceChnSentiCorpCrawler()
         elif source == "dedao":
             from crawler.dedao_playwright import DedaoCrawlerPlaywright
             crawler = DedaoCrawlerPlaywright()

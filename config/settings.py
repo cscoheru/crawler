@@ -95,13 +95,15 @@ LOG_RETENTION = "30 days"
 SCHEDULER_TIMEZONE = "Asia/Shanghai"
 SCHEDULER_JOBS = {
     "zhihu": {"hour": 6, "minute": 0},
-    "toutiao": {"hour": 8, "minute": 0},
+    "toutiao": {"hour": 8, "minute": 0},  # Now using THUCNews dataset
     "wechat": {"hour": 10, "minute": 0},
     "bilibili": {"hour": 12, "minute": 0},
     "dedao": {"hour": 13, "minute": 0},
     "ximalaya": {"hour": 13, "minute": 30},
-    "classify": {"hour": 14, "minute": 0},
-    "dify_sync": {"hour": 15, "minute": 0},
+    "weibo": {"hour": 14, "minute": 0},  # New: Weibo dataset
+    "chnsenticorp": {"hour": 14, "minute": 30},  # New: Hotel reviews
+    "classify": {"hour": 15, "minute": 0},
+    "dify_sync": {"hour": 16, "minute": 0},
     "quality_check": {"hour": 20, "minute": 0},
 }
 
